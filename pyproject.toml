@@ -1,0 +1,27 @@
+
+[project]
+name = "a11ycoach"
+version = "0.1.0"
+description = "An accessibility mentor that maps UI issues to WCAG criteria and suggests fixes."
+readme = "README.md"
+authors = [
+    { name = "yuvan", email = "yuvansri.it.28@psvpec.in" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.163.2",
+    "pydantic-settings>=2.16.3",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.9,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pre-commit>=4.7.0",
+    "pytest>=9.2.0",
+    "ruff>=0.17.5",
+]
