@@ -1,4 +1,4 @@
-"""All settings come from environment variables (or a local .env file)."""
+"""All settings come from environment variables or a local .env file."""
 
 from functools import lru_cache
 from pathlib import Path
@@ -8,13 +8,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     app_name: str = "a11ycoach"
-    # No default on purpose: if APP_ENV is missing, the app refuses to start (fail fast).
     app_env: Literal["local", "ci", "production"]
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     data_file: Path = Path("data/sample_records.json")
+    database_url: str
 
 
 @lru_cache
