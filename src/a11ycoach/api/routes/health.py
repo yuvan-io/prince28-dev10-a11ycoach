@@ -1,31 +1,21 @@
-"""Health and readiness endpoints."""
+from fastapi import APIRouter, Response
 
-from fastapi import APIRouter, Depends, HTTPException
+from a11ycoach.api.deps import DbCheckDep, SettingsDep
 
-from a11ycoach.api.deps import get_store
-from a11ycoach.store import RecordStore
-
-router = APIRouter()
+router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
-def health() -> dict[str, str]:
-    """Confirm that the application is running."""
-    return {"status": "ok"}
+def health(settings: SettingsDep) -> dict[str, str]:
+    """Liveness: is the process alive? Instant. Never touches the DB or the LLM."""
+    return {"status": "ok", "app": settings.app_name, "env": settings.app_env}
 
 
 @router.get("/ready")
-def readiness(
-    store: RecordStore = Depends(get_store),
-) -> dict[str, object]:
-    """Report whether the record data has loaded."""
-    if not store.ready:
-        raise HTTPException(
-            status_code=503,
-            detail="Record data has not been loaded.",
-        )
-
-    return {
-        "status": "ready",
-        "checks": {"records_loaded": True},
-    }
+async def ready(db_ok: DbCheckDep, response: Response) -> dict:
+    """Readiness: can this instance serve traffic right now?"""
+    checks = {"database": db_ok}
+    ok = all(checks.values())
+    if not ok:
+        response.status_code = 503
+    return {"status": "ready" if ok else "not_ready", "checks": checks}

@@ -1,8 +1,21 @@
 """Problem Details error responses."""
 
-from fastapi import Request
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+
+def register_error_handlers(app: FastAPI) -> None:
+    """Register application-wide error handlers."""
+    app.add_exception_handler(
+        RequestValidationError,
+        validation_error_handler,
+    )
+    app.add_exception_handler(
+        StarletteHTTPException,
+        http_error_handler,
+    )
 
 
 def problem(
@@ -54,11 +67,25 @@ async def validation_error_handler(
     )
 
 
-async def not_found_error_handler(
+async def http_error_handler(
     request: Request,
-    exc: Exception,
+    exc: StarletteHTTPException,
 ) -> JSONResponse:
-    """Return a standard 404 Problem Details response."""
-    detail = str(exc.detail) if hasattr(exc, "detail") else "The requested resource was not found."
+    """Return HTTP errors in a structured format."""
+    titles = {
+        400: "Bad Request",
+        401: "Unauthorized",
+        403: "Forbidden",
+        404: "Not Found",
+        405: "Method Not Allowed",
+    }
 
-    return problem(404, "Not Found", detail, request)
+    title = titles.get(exc.status_code, "HTTP Error")
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+
+    return problem(
+        exc.status_code,
+        title,
+        detail,
+        request,
+    )

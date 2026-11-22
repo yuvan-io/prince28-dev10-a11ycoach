@@ -1,59 +1,41 @@
-"""Application factory and startup lifecycle."""
+"""App factory: build a fully wired FastAPI app from settings."""
 
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from fastapi.exceptions import RequestValidationError
+from fastapi import APIRouter, FastAPI
 
-from a11ycoach.api.errors import (
-    not_found_error_handler,
-    validation_error_handler,
-)
+from a11ycoach.api.errors import register_error_handlers
 from a11ycoach.api.middleware import request_context_middleware
 from a11ycoach.api.routes import documents, health
 from a11ycoach.config import Settings, get_settings
+from a11ycoach.db.session import make_engine, make_sessionmaker
 from a11ycoach.logging_setup import setup_logging
-from a11ycoach.store import RecordStore
 
 logger = logging.getLogger("a11ycoach")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    """Create the FastAPI application with optional test settings."""
-
     settings = settings or get_settings()
     setup_logging(settings.log_level)
-
-    store = RecordStore(settings.data_file)
+    engine = make_engine(settings)  # no connection is opened yet
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        """Load records when the application starts."""
-        app.state.store = store
-
-        try:
-            count = store.load()
-            logger.info("records loaded", extra={"records": count})
-        except (FileNotFoundError, ValueError):
-            logger.exception("Could not load records")
-
+        logger.info("starting", extra={"status": settings.app_env})
         yield
+        await engine.dispose()  # close every pooled connection on shutdown
 
-    app = FastAPI(
-        title=settings.app_name,
-        lifespan=lifespan,
-    )
+    app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
+    app.state.settings = settings
+    app.state.engine = engine
+    app.state.sessionmaker = make_sessionmaker(engine)
 
     app.middleware("http")(request_context_middleware)
+    register_error_handlers(app)
 
-    app.add_exception_handler(
-        RequestValidationError,
-        validation_error_handler,
-    )
-    app.add_exception_handler(404, not_found_error_handler)
-
+    v1 = APIRouter(prefix="/v1")
+    v1.include_router(documents.router)
     app.include_router(health.router)
-    app.include_router(documents.router)
-
+    app.include_router(v1)
     return app
