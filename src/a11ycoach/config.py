@@ -4,6 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +20,8 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     data_file: Path = Path("data/sample_records.json")
     database_url: str
+    # The commit this image was built from. CI sets it (Dockerfile ARG GIT_SHA); locally "dev".
+    git_sha: str = Field(default="dev", validation_alias="A11YCOACH_GIT_SHA")
 
 
 @lru_cache

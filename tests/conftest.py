@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -61,7 +63,14 @@ def fake_repo():
 
 @pytest.fixture
 def client(fake_repo):
-    settings = Settings(app_env="ci")
+    settings = Settings(
+        app_env="ci",
+        database_url=os.environ.get(
+            "TEST_DATABASE_URL",
+            "postgresql://app:app@localhost:5433/app",
+        ),
+    )
+
     app = create_app(settings)
 
     app.dependency_overrides[get_repo] = lambda: fake_repo
