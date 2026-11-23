@@ -5,14 +5,14 @@
 [![Live](https://img.shields.io/website?url=https%3A%2F%2Fa11ycoach.onrender.com%2Fhealth&label=live)](https://a11ycoach.onrender.com/docs)
 [![Uptime (30 days)](https://img.shields.io/uptimerobot/ratio/YOUR-MONITOR-KEY)](https://a11ycoach.onrender.com/health)
 
-**Live:** https://a11ycoach.onrender.com · [API docs](https://a11ycoach.onrender.com/docs) · [health](https://a11ycoach.onrender.com/health)
+**Live:** https://a11ycoach.onrender.com Â· [API docs](https://a11ycoach.onrender.com/docs) Â· [health](https://a11ycoach.onrender.com/health)
 )](https://a11ycoach.onrender.com/health)
 
-**Live:** https://a11ycoach.onrender.com · [API docs](https://a11ycoach.onrender.com/docs) · [health](https://a11ycoach.onrender.com/health)
+**Live:** https://a11ycoach.onrender.com Â· [API docs](https://a11ycoach.onrender.com/docs) Â· [health](https://a11ycoach.onrender.com/health)
 
 An accessibility mentor that maps UI problems to WCAG 2.2 success criteria and provides actionable fixes based on W3C techniques and ARIA patterns.
 
-**Status:** Day 4 — Dockerized FastAPI service, PostgreSQL migrations, Redis, and automated unit/integration tests.
+**Status:** Day 4 â€” Dockerized FastAPI service, PostgreSQL migrations, Redis, and automated unit/integration tests.
 
 ## Who it's for
 
@@ -49,7 +49,7 @@ Mapping an accessibility issue to the correct success criterion, conformance lev
 
 Correctly map at least 85% of a test set of 50 accessibility issues to the correct criterion and conformance level.
 
-## Run locally
+## Run locally in one command
 
 ### Prerequisites
 
@@ -73,10 +73,10 @@ docker compose up --build -d
 
 The stack includes:
 
-- **PostgreSQL 17 with pgvector** — persistent database storage
-- **Redis 7** — cache service
-- **Migration service** — applies Alembic migrations before the API starts
-- **FastAPI** — application API
+- **PostgreSQL 17 with pgvector** â€” persistent database storage
+- **Redis 7** â€” cache service
+- **Migration service** â€” applies Alembic migrations before the API starts
+- **FastAPI** â€” application API
 
 Check service status:
 
@@ -148,3 +148,4 @@ uv run poe format
 Integration tests require Docker Compose's PostgreSQL service to be running and accessible at `localhost:5432`.
 
 The integration test runner creates a uniquely named temporary database, applies migrations, runs the integration suite, and drops the temporary database afterward.
+
