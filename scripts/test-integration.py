@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import uuid
+from urllib.parse import urlsplit, urlunsplit
 
 import asyncpg
 
@@ -40,7 +41,8 @@ async def drop_database(name: str) -> None:
 
 def main() -> int:
     name = f"a11ycoach_test_{uuid.uuid4().hex[:12]}"
-    database_url = f"postgresql://postgres:postgres@localhost:5432/{name}"
+    admin_url = urlsplit(ADMIN_URL)
+    database_url = urlunsplit(admin_url._replace(path=f"/{name}"))
 
     print(f"Creating fresh database: {name}")
     asyncio.run(create_database(name))
