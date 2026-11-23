@@ -1,6 +1,8 @@
 
 # Stage 1: Build dependencies
 FROM python:3.12-slim AS builder
+ARG GIT_SHA=dev
+ENV A11YCOACH_GIT_SHA=$GIT_SHA
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /bin/
 

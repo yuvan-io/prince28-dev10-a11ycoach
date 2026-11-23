@@ -6,7 +6,16 @@ def test_health(client):
         "status": "ok",
         "app": "a11ycoach",
         "env": "ci",
+        "version": "dev",
     }
+
+
+def test_health_version(client):
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert "version" in response.json()
+    assert response.json()["version"] == "dev"
 
 
 def test_ready(client):
