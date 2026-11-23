@@ -62,7 +62,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
-
+      - uses: astral-sh/setup-uv@v10.3.3
       - name: Image name (registry names must be lowercase)
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
