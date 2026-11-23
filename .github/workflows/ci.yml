@@ -39,8 +39,8 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run poe lint
-      - name: Unit + integration tests with coverage
-        run: uv run poe cov
+      - name: Unit + integration tests
+        run: uv run poe test
 
   image:
     name: build image
