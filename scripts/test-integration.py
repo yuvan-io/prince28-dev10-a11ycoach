@@ -8,7 +8,10 @@ import uuid
 
 import asyncpg
 
-ADMIN_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
+ADMIN_URL = os.environ.get(
+    "ADMIN_DATABASE_URL",
+    "postgresql://postgres:postgres@localhost:5432/postgres",
+)
 
 
 async def create_database(name: str) -> None:
