@@ -1,4 +1,14 @@
 # A11yCoach
+[![CI](https://github.com/yuvan-io/prince28-dev10-a11ycoach/actions/workflows/ci.yml/badge.svg)](https://github.com/yuvan-io/prince28-dev10-a11ycoach/actions/workflows/ci.yml)
+[![Live](https://img.shields.io/website?url=https%3A%2F%2Fa11ycoach.onrender.com%2Fhealth&label=live)](https://a11ycoach.onrender.com/docs)
+[![Uptime (30 days)](https://img.shields.io/uptimerobot/ratio/[![CI](https://github.com/yuvan-io/prince28-dev10-a11ycoach/actions/workflows/ci.yml/badge.svg)](https://github.com/yuvan-io/prince28-dev10-a11ycoach/actions/workflows/ci.yml)
+[![Live](https://img.shields.io/website?url=https%3A%2F%2Fa11ycoach.onrender.com%2Fhealth&label=live)](https://a11ycoach.onrender.com/docs)
+[![Uptime (30 days)](https://img.shields.io/uptimerobot/ratio/YOUR-MONITOR-KEY)](https://a11ycoach.onrender.com/health)
+
+**Live:** https://a11ycoach.onrender.com · [API docs](https://a11ycoach.onrender.com/docs) · [health](https://a11ycoach.onrender.com/health)
+)](https://a11ycoach.onrender.com/health)
+
+**Live:** https://a11ycoach.onrender.com · [API docs](https://a11ycoach.onrender.com/docs) · [health](https://a11ycoach.onrender.com/health)
 
 An accessibility mentor that maps UI problems to WCAG 2.2 success criteria and provides actionable fixes based on W3C techniques and ARIA patterns.
 
