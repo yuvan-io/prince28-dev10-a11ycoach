@@ -54,29 +54,37 @@ Verification:
 
 ## D05 · CI/CD and going live
 
-- Live URL: (paste)
-- CI run for pull request 1: https://github.com/yuvan-io/prince28-dev10-a11ycoach/actions (paste the run link)
-- First deploy that ran by itself: (paste the CD run link)
-- Merge clicked at __:__ → "Smoke test passed" at __:__ → lead time: ___ min
+- Live URL: https://a11ycoach.onrender.com
+- CI workflow: https://github.com/yuvan-io/prince28-dev10-a11ycoach/actions
+- Rollback CD run: https://github.com/yuvan-io/prince28-dev10-a11ycoach/actions/runs/45334610574
+- Roll-forward CD run: https://github.com/yuvan-io/prince28-dev10-a11ycoach/actions/runs/45335950273
 
-### Smoke test output from that CD run
+### Final deployment smoke test
 
 ```text
-paste the last 4 lines of the "Smoke test the live URL" step
+ok /health -> 200, version 73772f701384c232583338d819f0947a905b3aa6
+ok /ready -> 200 {'status': 'ready', 'checks': {'database': True}}
+ok /v1/documents?limit=1 -> 200
+Smoke test passed
 ```
 
 ### Rollback drill
 
-- Rolled back to sha ________ : started __:__, smoke passed __:__ (___ min)
-- Rolled forward to sha ________ : ___ min
-- During the rollback, the database stayed on the newer schema. Why is that safe here? (2 lines)
+- Rolled back to SHA: `c00dd44245430730cf5020ba1f92b2356067120f`
+- Rollback workflow: CD #8 — manually triggered, successful, 49 seconds.
+- Rolled forward to SHA: `73772f701384c232583338d819f0947a905b3aa6`
+- Roll-forward workflow: CD #9 — manually triggered, successful, 49 seconds.
+- Both deployments passed the smoke test.
+
+The database stayed on the newer schema because the manual rollback workflow skips migrations. No database downgrade was performed. The rollback candidate had the same database models and migration files as the current version, so the existing schema remained compatible with it.
 
 ### Where my secrets live
 
-- Neon string: GitHub Secret DATABASE_URL + Render environment. Not in Git, not in the image.
-- Render deploy hook: GitHub Secret RENDER_DEPLOY_HOOK only.
+- Neon connection string: GitHub Secret `DATABASE_URL` and Render environment. Not committed to Git or included in the image.
+- Render deploy hook: GitHub Secret `RENDER_DEPLOY_HOOK` only.
 
 ### Monitoring
 
-- UptimeRobot checks /health every 5 minutes; alerts go to my email.
-- One thing that would make my live app faster on its first request: (1 line)
+- UptimeRobot monitor configured for `/health` at a 5-minute interval, with email alerts.
+- The health endpoint supports both GET and HEAD requests.
+- A periodic health check can help keep a sleeping Render instance warm and reduce cold-start delays.
