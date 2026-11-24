@@ -165,3 +165,98 @@ The database stayed on the newer schema because the manual rollback workflow ski
 - UptimeRobot monitor configured for `/health` at a 5-minute interval, with email alerts.
 - The health endpoint supports both GET and HEAD requests.
 - A periodic health check can help keep a sleeping Render instance warm and reduce cold-start delays.
+
+
+### Kill and resume
+
+- Run 1: I pressed Ctrl+C after 6 files.
+- Run 2: downloaded=4 skipped=6.
+- Run 3: downloaded=0 skipped=10.
+- Remaining incomplete .part files: 0.
+- The downloader resumed successfully without downloading
+  previously completed documents again.
+
+## D06 · Collecting the corpus
+
+### Collection targets
+
+- Start target: WCAG 2.2 and Understanding documents.
+- Full target: 1,500+ pages, including techniques, failures and WAI-ARIA patterns.
+- Start target achieved: 321 unique document paths.
+- URL-downloaded documents: 10.
+- Selected repository documents: 311.
+- Selected corpus size: 1.74 MiB.
+- Total raw directory size, including supporting assets: 6.41 MiB.
+- Historical manifest records: 322.
+- WCAG repository commit: 2766fae25f.
+
+### Collection doors used
+
+- Door 1 — URL list.
+- Door 2 — Git repository.
+- Door 3 — Sitemap: not required.
+- Door 4 — Manual collection: not required.
+
+### Licence and responsible collection
+
+| Source | Licence | Collection method |
+|---|---|---|
+| W3C Understanding WCAG | W3C Document License | URL downloads |
+| w3c/wcag | W3C Document License | Git repository |
+| w3c/aria-practices | Pending verification | Planned |
+
+- Respect robots.txt and source terms.
+- Maximum concurrent URL requests: 4.
+- Default request delay: 0.5 seconds.
+- Do not bypass blocked requests.
+- Retain copyright and attribution information.
+- Cite and link to original documentation.
+- No personal data is intentionally collected.
+
+### Kill-and-resume experiment
+
+| Run | Downloaded | Skipped |
+|---|---:|---:|
+| Run 1 — Interrupted | 6 | — |
+| Run 2 — Resumed | 4 | 6 |
+| Run 3 — Repeated | 0 | 10 |
+
+- Remaining incomplete .part files: 0.
+- Single-file recovery produced an additional manifest record for contrast-minimum-d64a389c.html.
+- Repository repeat run: added=0 unchanged=311.
+- The downloader successfully avoided unnecessary repeated downloads.
+
+### Capacity estimates
+
+- Current estimated tokens: 451,603.
+- Average estimated tokens per document: 1,407.
+- Full target: 1,500 pages.
+- Projected tokens: 2,110,295.
+- Projected chunks: 4,221.
+- Raw vector payload: 24.73 MiB.
+- Estimated one-time embedding cost: INR 3.80, using illustrative pricing assumptions.
+- Tenfold growth vector payload: 247.32 MiB.
+- Hosted PostgreSQL storage limit: pending confirmation.
+
+### What surprised me
+
+The selected corpus is only 1.74 MiB, even though the raw directory occupies 6.41 MiB. Supporting assets should not be counted as selected accessibility documents.
+
+The estimated embedding cost is also relatively small compared with the importance of database capacity and retrieval performance.
+
+### Problems encountered and fixes
+
+- Asynchronous tests initially failed because pytest-asyncio was missing. Installed the dependency and configured asyncio_mode.
+- Integration tests initially failed because PostgreSQL was not running. Started the database using Docker Compose.
+- Downloaded documents appeared in Git status. Added data/raw/ to .gitignore.
+- Markdown was accidentally pasted into dataset_report.py, causing a SyntaxError. Replaced it with a working Python report generator.
+- Repository file counts differed because the checkout included supporting images, configuration files and other assets. Used unique manifest paths to measure the selected corpus.
+
+### Verification
+
+- Unit tests: 36 passed.
+- Integration tests: 5 passed.
+- Lint: passed.
+- Dataset report generation: passed.
+- Report regeneration: passed.
+- Raw documents excluded from Git.
