@@ -260,3 +260,97 @@ The estimated embedding cost is also relatively small compared with the importan
 - Dataset report generation: passed.
 - Report regeneration: passed.
 - Raw documents excluded from Git.
+
+## D07 · Parser comparison
+
+<!-- parsers:start -->
+| File | Parsers (A / B) | Pages | A found | B found | Time (A / B) | Better, why |
+|---|---|---|---|---|---|---|
+| contrast-minimum-d64a389c.html | trafilatura / strip tags | 8 | 27,158 chars, 19 headings, 0 tables | 32,720 chars, 0 headings, 0 tables | 0.05 s / 0.01 s | A preferred: preserves 19 headings and extracts 5,562 fewer characters. |
+| non-text-content-62581aaa.html | trafilatura / strip tags | 9 | 24,946 chars, 22 headings, 0 tables | 33,187 chars, 0 headings, 0 tables | 0.05 s / 0.01 s | A preferred: preserves 22 headings and extracts 8,241 fewer characters. |
+| conformance.html | trafilatura / strip tags | 15 | 38,302 chars, 0 headings, 0 tables | 47,293 chars, 0 headings, 0 tables | 0.06 s / 0.01 s | A extracts 8,991 fewer characters, but neither preserves headings. Manual verification needed. |
+| name-role-value-e80095ed.html | trafilatura / strip tags | 5 | 16,903 chars, 16 headings, 0 tables | 24,297 chars, 0 headings, 0 tables | 0.05 s / 0.01 s | A preferred: preserves 16 headings and extracts 7,394 fewer characters. |
+| index.html | trafilatura / strip tags | 10 | 26,247 chars, 0 headings, 0 tables | 29,812 chars, 0 headings, 0 tables | 0.05 s / 0.01 s | A extracts 3,565 fewer characters, but neither preserves headings. Manual verification needed. |
+| status-messages-0165f144.html | trafilatura / strip tags | 7 | 18,987 chars, 22 headings, 0 tables | 24,741 chars, 0 headings, 0 tables | 0.04 s / 0.01 s | A preferred: preserves 22 headings and extracts 5,754 fewer characters. |
+| info-and-relationships-786aa31b.html | trafilatura / strip tags | 5 | 12,288 chars, 15 headings, 0 tables | 20,244 chars, 0 headings, 0 tables | 0.03 s / 0.01 s | A preferred: preserves 15 headings and extracts 7,956 fewer characters. |
+| error-identification-dc4f1afa.html | trafilatura / strip tags | 5 | 15,702 chars, 14 headings, 0 tables | 21,203 chars, 0 headings, 0 tables | 0.04 s / 0.00 s | A preferred: preserves 14 headings despite slower extraction. |
+| labels-or-instructions-2d139424.html | trafilatura / strip tags | 6 | 15,575 chars, 11 headings, 0 tables | 21,481 chars, 0 headings, 0 tables | 0.03 s / 0.00 s | A preferred: preserves 11 headings and extracts 5,906 fewer characters. |
+| non-text-contrast.html | trafilatura / strip tags | 8 | 21,301 chars, 0 headings, 0 tables | 36,800 chars, 0 headings, 0 tables | 0.04 s / 0.01 s | A extracts 15,499 fewer characters, but neither preserves headings. Manual verification needed. |
+<!-- parsers:end -->
+
+### Parser comparison findings
+
+- All 10 selected documents were HTML files.
+- Trafilatura extracted 217,409 characters compared with 291,778 using strip tags.
+- Trafilatura extracted approximately 25.49% fewer characters.
+- Trafilatura detected 119 headings, while strip tags detected none.
+- Strip tags was faster, but Trafilatura provided better structural information.
+- Neither parser detected tables in the selected documents.
+- Three documents had no detected headings with either parser.
+- No PDF files were included in this comparison, so no corpus-based PDF parser performance conclusion can be made.
+- Trafilatura is the preferred HTML parser for A11yCoach based on structural preservation, subject to manual content verification.
+
+### Parsed page quality observations
+
+- Understanding SC 1.1.1 Non-text Content, page 2, correctly retained the heading path: Understanding SC 1.1.1 Non-text Content (Level A) → Intent → Note on CAPTCHA.
+- Understanding SC 1.4.3 Contrast (Minimum), page 2, correctly retained the document title and Intent heading.
+- Technical information such as contrast ratios, font sizes, CAPTCHA requirements and text alternatives was preserved.
+- Three of the five sampled pages had empty heading paths.
+- Some extracted content contained awkward line breaks and escaped citation markers.
+- No obvious navigation or footer junk was visible in the sampled text.
+- No tables were detected in the ten compared HTML documents. Table extraction was verified through unit testing, but not through these corpus samples.
+- Trafilatura is preferred for HTML because it preserves more structural information than plain tag stripping.
+
+### D07 · Parsing my corpus
+
+- Files in the manifest: 321 · parsed: 321 · failed: 0 · pages generated: 497.
+- Parsing coverage: 100%.
+- Initial sample: 20 files, 78 pages, 9.1 seconds.
+- Full parsing run: 299 additional files, 417 pages, 104.7 seconds.
+- Idempotency check: 0 new pages, 1.0 second.
+- Failure recovery: 2 files, 2 pages, 1.6 seconds.
+
+### Failures by reason
+
+| Reason | Initial failures | Remaining failures | What I did |
+|---|---:|---:|---|
+| empty | 2 | 0 | Removed the minimum 40-character restriction for HTML content while retaining empty-content validation. |
+| Total | 2 | 0 | Successfully retried both files. |
+
+- The files I fixed: `blocks-of-text.html` and `prerecorded.html`.
+- Reason: Valid WCAG glossary definitions were incorrectly classified as empty because they contained fewer than 40 characters.
+- Fix: Updated the HTML parser to accept short, non-empty content.
+- Result: Both files were successfully recovered without modifying the original source documents.
+
+### What I saw when I read my parsed pages
+
+- A page where the heading path is right: Understanding SC 1.1.1 Non-text Content (Level A), page 2.
+- Heading path: Document title → Intent → Note on CAPTCHA.
+- Something that came out wrong: Conformance, page 2, had an empty heading path. Some documents also contained awkward line breaks and escaped citation markers.
+- Seven sampled WCAG source fragments retained file paths instead of human-readable document titles.
+- No obvious menu or footer junk was visible in the sampled pages.
+- A table: Markdown table extraction passed unit testing. No tables were detected in the ten compared HTML documents.
+
+### My parser choice
+
+- For HTML, I use Trafilatura because it detected 119 headings across ten documents, compared with zero using plain tag stripping.
+- Trafilatura provides better structural information despite being slower.
+- For PDFs, PyMuPDF remains the implementation choice because it supports page structure and table extraction. PDF parser functionality was verified through unit tests, but no PDFs were included in the ten-file corpus comparison.
+- A kind of document that neither HTML parser handles well: repository HTML fragments where heading structure is not preserved.
+
+### One thing that went wrong today, and how I fixed it
+
+- Two valid WCAG glossary definitions were incorrectly rejected because their extracted text was shorter than 40 characters. I corrected the validation condition and successfully retried both files.
+- The Windows pytest launcher encountered a script path issue. I used `uv run python -m pytest` instead.
+- Integration tests initially lacked the integration marker. Adding the marker allowed them to run in the isolated integration test environment.
+
+### Verification
+
+- Initial unit test suite: 52 passed.
+- Integration tests: 8 passed.
+- Parser tests after failure recovery: 16 passed.
+- Lint: passed.
+- Parsing coverage: 100%.
+- Idempotency: passed before failure recovery.
+- Parser comparison: 10 HTML files.
+- Manual source inspection: completed.
