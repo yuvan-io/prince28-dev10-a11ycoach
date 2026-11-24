@@ -1,18 +1,95 @@
 ﻿# Engineering notes: A11yCoach
 
-## D03 Â· PostgreSQL
 
-### Migrations (upgrade, downgrade, upgrade)
+## D03 · PostgreSQL
+
+### Migrations
+
+Downgrade the GIN index migration:
 
 ```text
-[paste output of downgrade -1]
-
-[paste output of current]
-
-[paste output of upgrade head]
-
-[paste output of history]
+PS> uv run alembic downgrade -1
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running downgrade beb797f16c9b -> 281e2b8d6ab6, add metadata gin index
 ```
+
+Upgrade to the latest migration:
+
+```text
+PS> uv run alembic upgrade head
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade 281e2b8d6ab6 -> beb797f16c9b, add metadata gin index
+```
+
+Current migration:
+
+```text
+beb797f16c9b (head)
+```
+
+Migration history:
+
+```text
+281e2b8d6ab6 -> beb797f16c9b (head), add metadata gin index
+<base> -> 281e2b8d6ab6, create documents and pages
+```
+
+### Idempotent data loader
+
+- Initial load: 20 inserted, 0 updated, 0 unchanged.
+- Second load: 0 inserted, 0 updated, 20 unchanged.
+- After modifying one record: 0 inserted, 1 updated, 19 unchanged.
+- SHA-256 fingerprints are used to detect changes and avoid unnecessary updates.
+
+### JSONB GIN index — EXPLAIN ANALYZE
+
+Command:
+
+```text
+uv run python scripts/explain.py criterion_id 1.1.1
+```
+
+The script runs the same JSONB containment query twice.
+
+**1. Normal PostgreSQL planner**
+
+```text
+Seq Scan on documents  (cost=0.00..1.25 rows=1 width=36) (actual time=0.016..0.021 rows=1.00 loops=1)
+  Filter: (metadata @> '{"criterion_id": "1.1.1"}'::jsonb)
+  Rows Removed by Filter: 19
+  Buffers: shared hit=1
+Planning:
+  Buffers: shared hit=125 read=1
+Planning Time: 1.213 ms
+Execution Time: 0.044 ms
+```
+
+**2. With sequential scans disabled**
+
+```text
+Bitmap Heap Scan on documents  (cost=8.53..12.55 rows=1 width=36) (actual time=0.050..0.051 rows=1.00 loops=1)
+  Recheck Cond: (metadata @> '{"criterion_id": "1.1.1"}'::jsonb)
+  Heap Blocks: exact=1
+  Buffers: shared hit=3
+  ->  Bitmap Index Scan on ix_documents_metadata_gin  (cost=0.00..8.53 rows=1 width=0) (actual time=0.008..0.008 rows=1.00 loops=1)
+        Index Cond: (metadata @> '{"criterion_id": "1.1.1"}'::jsonb)
+        Index Searches: 1
+        Buffers: shared hit=2
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.103 ms
+Execution Time: 0.087 ms
+```
+
+### EXPLAIN analysis
+
+- The normal planner chose a sequential scan because the documents table contains only 20 rows. Scanning such a small table is estimated to be cheaper than using an index.
+- With sequential scans disabled, PostgreSQL used the `ix_documents_metadata_gin` index through a Bitmap Index Scan.
+- The filtered query returned one matching document.
+- The GIN index is therefore available and usable for JSONB containment queries.
+- The forced index plan took 0.087 ms compared with 0.044 ms for the sequential scan in this run. This is expected for a small table; the index can become more beneficial as the dataset grows.
 
 ## D04 · Docker and automated tests
 
