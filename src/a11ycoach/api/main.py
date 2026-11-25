@@ -7,9 +7,11 @@ from fastapi import APIRouter, FastAPI
 
 from a11ycoach.api.errors import register_error_handlers
 from a11ycoach.api.middleware import request_context_middleware
-from a11ycoach.api.routes import documents, health
+from a11ycoach.api.routes import chat, documents, health
 from a11ycoach.config import Settings, get_settings
+from a11ycoach.db.llm_calls import make_recorder
 from a11ycoach.db.session import make_engine, make_sessionmaker
+from a11ycoach.llm.gateway import build_gateway
 from a11ycoach.logging_setup import setup_logging
 
 logger = logging.getLogger("a11ycoach")
@@ -30,12 +32,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = engine
     app.state.sessionmaker = make_sessionmaker(engine)
+    app.state.system_prompt = chat.load_prompt(settings.prompts_dir)  # missing file: no start
+    app.state.gateway = build_gateway(settings, make_recorder(app.state.sessionmaker))
 
     app.middleware("http")(request_context_middleware)
     register_error_handlers(app)
 
     v1 = APIRouter(prefix="/v1")
     v1.include_router(documents.router)
+    v1.include_router(chat.router)
     app.include_router(health.router)
     app.include_router(v1)
     return app

@@ -354,3 +354,654 @@ The estimated embedding cost is also relatively small compared with the importan
 - Idempotency: passed before failure recovery.
 - Parser comparison: 10 HTML files.
 - Manual source inspection: completed.
+
+## D08 · LLM gateway
+
+### Provider configuration
+
+- Primary provider: Gemini.
+- Primary model: `gemini-3.8-flash`.
+- Fallback provider: Groq.
+- Fallback model: `openai/gpt-oss-20b`.
+- Both providers use OpenAI-compatible API endpoints.
+- Provider names, models, API URLs and timeout values are configurable.
+- API keys are stored in environment variables, not in source code.
+- Automated tests use FakeLLM without requiring real API keys.
+
+### LLM gateway implementation
+
+- Implemented a common gateway for both LLM providers.
+- Added streaming and non-streaming response support.
+- Implemented automatic retry for retryable provider errors.
+- Implemented automatic fallback when the primary provider fails.
+- Maximum generation attempts per provider: 2.
+- Circuit breaker failure threshold: 3.
+- Circuit breaker cooldown: 30 seconds.
+- Streaming fallback is allowed only before the first response chunk.
+- Added token usage, latency and estimated cost tracking.
+- Added request ID tracking for provider calls.
+- Added a versioned system prompt: `prompts/chat_system_v1.md`.
+
+### Database migration
+
+- Migration: `3a3eb8fbe41b_add_llm_calls.py`.
+- Created the `llm_calls` table.
+- Added indexes for request_id and created_at.
+- Recorded provider, model, purpose, prompt version, status,
+  errors, input tokens, output tokens, latency, estimated cost
+  and fallback usage.
+- Stored estimated cost using Numeric(12, 6).
+- Migration applied successfully.
+
+### API endpoints
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | /v1/chat | Generate streaming or non-streaming AI responses |
+| GET | /v1/usage | Retrieve aggregated LLM usage and estimated cost |
+
+- Streaming responses use Server-Sent Events (SSE).
+- Non-streaming responses return JSON.
+- Usage data is retrieved from PostgreSQL.
+
+### First real LLM response on my laptop
+
+Question:
+
+"What does success criterion 1.4.3 Contrast (Minimum) require?"
+
+- Provider: Groq.
+- Model: `openai/gpt-oss-20b`.
+- Automatic fallback: YES.
+
+| Metric | Streaming | Non-streaming |
+|---|---:|---:|
+| Time to first words | 7.37 s | Not applicable |
+| Total response time | 7.83 s | 34.65 s |
+| Input tokens | 262 | 262 |
+| Output tokens | 286 | 733 |
+| Estimated cost (INR) | 0.010018 | 0.022757 |
+| Attempts reported | 1 | 1 |
+| Fallback used | Yes | Yes |
+
+Observations:
+
+- Both streaming and non-streaming requests returned real AI responses.
+- Streaming allowed the answer to appear before generation completed.
+- Automatic fallback to Groq worked successfully.
+- The streaming response arrived faster than the non-streaming response in this experiment.
+- The two responses generated different numbers of output tokens, so their timings are not a controlled performance comparison.
+- Gemini also successfully answered a later "Hi" request.
+- Gemini's successful request required two attempts and took 22.56 seconds.
+- Gemini input tokens: 187.
+- Gemini output tokens: 67.
+- Gemini estimated cost: INR 0.037192.
+- Gemini fallback used: No.
+
+### Performance against Day 1 targets
+
+| Target | Observed result | Status |
+|---|---|---|
+| First words under 1.5 seconds | 7.37 seconds locally | Not met |
+| Average estimated cost under INR 0.50 | Approximately INR 0.00842 | Met in local tests |
+| Live streaming response | Pending deployment | Pending |
+| Live warm-request latency | Pending measurement | Pending |
+
+The first-word latency target was not achieved locally.
+Primary-provider failures and fallback may have contributed
+to the end-to-end delay.
+
+### Tokens: English against Tamil
+
+The same provider and model were used for all three measurements.
+
+- Provider: Groq.
+- Model: `openai/gpt-oss-20b`.
+
+| Message | Input tokens |
+|---|---:|
+| Hi (baseline) | 247 |
+| Explain in one sentence what a refund is. | 255 |
+| பணத்தைத் திரும்பப் பெறுதல் என்றால் என்ன என்பதை ஒரே வாக்கியத்தில் விளக்கவும். | 269 |
+
+Calculation:
+
+- Baseline-adjusted English tokens: 255 - 247 = 8.
+- Baseline-adjusted Tamil tokens: 269 - 247 = 22.
+- Tamil-to-English ratio: 22 / 8 = 2.75.
+
+Observation:
+
+Tamil required approximately 2.75 times as many
+baseline-adjusted input tokens as English for the tested
+sentences.
+
+The result is specific to these sentences and this model.
+The baseline includes the short "Hi" message, so the ratio
+is an approximation.
+
+Both questions were rejected as outside A11yCoach's subject.
+The Tamil question received a response in English.
+
+### What the model does without my documents
+
+The current model answers from general knowledge.
+The collected WCAG documents are not yet connected to
+the LLM through retrieval.
+
+#### Question 6 — Legal compliance
+
+Question:
+
+"Is our website legally compliant in India?"
+
+Observations:
+
+- The model expressed uncertainty about whether the website
+  was legally compliant.
+- It indicated that an accessibility assessment or audit
+  would be necessary.
+- It also made legal references that were not independently
+  verified.
+- The response cannot establish whether a particular website
+  is legally compliant.
+- Legal compliance requires evidence about the actual website
+  and applicable legal requirements.
+
+Measurements:
+
+- Provider: Groq.
+- Fallback used: Yes.
+- Total response time: 11.82 seconds.
+- Input tokens: 254.
+- Output tokens: 325.
+- Estimated cost: INR 0.011072.
+
+The exact response wording was not retained in these notes.
+The observations above are a summary, not a verbatim quote.
+
+#### Off-topic question
+
+Question:
+
+"Who won the 2011 cricket world cup?"
+
+Observations:
+
+- The model declined to answer the off-topic question.
+- It recognized that cricket was outside A11yCoach's
+  accessibility-related subject.
+- The subject restriction in the system prompt worked
+  for this request.
+
+Measurements:
+
+- Provider: Groq.
+- Fallback used: Yes.
+- Total response time: 3.03 seconds.
+- Input tokens: 256.
+- Output tokens: 97.
+- Estimated cost: INR 0.004588.
+
+### Known-answer accuracy tests
+
+#### Test 1 — WCAG 2.2 SC 1.4.3 Contrast (Minimum)
+
+Result: Partially correct.
+
+What the model got right:
+
+- Normal text requires a minimum contrast ratio of 4.5:1.
+- Large-scale text requires a minimum contrast ratio of 3:1.
+
+What the model got wrong:
+
+- The streaming response incorrectly used pixels instead
+  of points for the large-scale text thresholds.
+- Both responses incorrectly included non-text UI components
+  under SC 1.4.3.
+
+Correct information:
+
+- Large-scale text is generally at least 18 points,
+  or 14 points when bold, or an equivalent size.
+- SC 1.4.3 applies to text and images of text,
+  subject to its stated exceptions.
+- Non-text UI component contrast is addressed separately
+  by SC 1.4.11 Non-text Contrast.
+
+Reference:
+https://www.w3.org/TR/WCAG22/#contrast-minimum
+
+#### Test 2 — WCAG 2.2 SC 2.1.1 Keyboard
+
+Question:
+
+"What does WCAG 2.2 success criterion 2.1.1 Keyboard require?"
+
+Result: Partially correct.
+
+- The model correctly explained keyboard operability.
+- It omitted the requirement concerning specific timings
+  for individual keystrokes.
+- It omitted the exception for functions that depend on
+  the path of movement rather than only the endpoints.
+- It mixed focus order requirements from SC 2.4.3.
+
+Measurements:
+
+- Provider: Groq.
+- Fallback used: Yes.
+- Total response time: 10.77 seconds.
+- Input tokens: 265.
+- Output tokens: 213.
+- Estimated cost: INR 0.007959.
+
+Reference:
+https://www.w3.org/TR/WCAG22/#keyboard
+
+#### Test 3 — WCAG 2.2 SC 2.5.8 Target Size (Minimum)
+
+Question:
+
+"What is the minimum target size required by WCAG 2.2
+success criterion 2.5.8?"
+
+Result: Incorrect.
+
+- Model answer: 44 x 44 CSS pixels.
+- Correct answer: 24 x 24 CSS pixels, subject to exceptions.
+- The model confused SC 2.5.8 Target Size (Minimum),
+  Level AA, with SC 2.5.5 Target Size (Enhanced),
+  Level AAA.
+
+Measurements:
+
+- Provider: Groq.
+- Fallback used: Yes.
+- Total response time: 3.19 seconds.
+- Input tokens: 269.
+- Output tokens: 334.
+- Estimated cost: INR 0.011436.
+
+Reference:
+https://www.w3.org/TR/WCAG22/#target-size-minimum
+
+### Accuracy findings
+
+- The model can provide useful general accessibility guidance.
+- It can also produce confident but incorrect technical details.
+- A correct criterion number does not guarantee a correct explanation.
+- Related WCAG success criteria can be confused with one another.
+- The system prompt alone does not guarantee factual accuracy.
+- Retrieval-Augmented Generation (RAG) using authoritative
+  W3C documents is needed to improve grounding and accuracy.
+- Retrieved answers will still require evaluation.
+
+### Fallback and circuit breaker
+
+Experiment:
+
+- Temporarily changed LLM_PRIMARY_MODEL to
+  `gemini-no-such-model`.
+- Restarted the application.
+- Sent multiple requests to deliberately trigger
+  primary-provider failure.
+
+Observed database records:
+
+| Time (UTC) | Gemini | Groq |
+|---|---|---|
+| 09:56:22 | HTTP 404 | Success |
+| 09:56:26 | HTTP 404 | Success |
+| 09:56:30 | HTTP 404 | Success |
+| 09:56:49 | No recorded call | Success |
+| 09:56:53 | No recorded call | Success |
+| 09:56:56 | No recorded call | Success |
+| 09:56:59 | No recorded call | Success |
+| 10:00:05 | HTTP 404 | Success |
+
+Observations:
+
+- Gemini returned HTTP 404 for three consecutive recorded failures.
+- The next four requests were handled successfully by Groq
+  without additional recorded Gemini calls.
+- The fourth request after the initial three-failure sequence
+  began was the first observed request without a Gemini call.
+- This behaviour is consistent with the circuit breaker
+  opening after three failures.
+- A subsequent Gemini attempt after the cooldown returned
+  HTTP 404, followed by successful Groq fallback.
+- This is consistent with a half-open probe.
+- Circuit breaker state transitions were inferred from
+  database records rather than explicit state-transition logs.
+
+#### Four consecutive fallback requests
+
+| Request | Provider | Fallback | Total time (s) | Cost (INR) |
+|---|---|---|---:|---:|
+| 1 | Groq | Yes | 2.72 | 0.003983 |
+| 2 | Groq | Yes | 2.92 | 0.005037 |
+| 3 | Groq | Yes | 2.66 | 0.004895 |
+| 4 | Groq | Yes | 2.93 | 0.003954 |
+
+- Successful requests: 4/4.
+- Success rate: 100% for these four requests.
+- Average end-to-end latency: 2.81 seconds.
+- Total estimated cost: INR 0.017869.
+- Time to first words: Not measured because these requests
+  used non-streaming JSON responses.
+
+#### Restoration
+
+- Restored LLM_PRIMARY_MODEL to `gemini-3.8-flash`.
+- Restarted the application successfully.
+- A successful Gemini response was observed earlier in
+  the day's experiments.
+- Successful Gemini generation after the final restoration
+  remains to be verified.
+
+Conclusion:
+
+A11yCoach continued answering requests despite deliberate
+primary-provider failure.
+
+### The bill — Usage endpoint verification
+
+Endpoint:
+
+GET /v1/usage?days=7
+
+Date: 2026-11-25.
+
+| Metric | Result |
+|---|---:|
+| Recorded provider calls | 29 |
+| Provider errors | 11 |
+| Successful provider calls | 18 |
+| Fallbacks | 17 |
+| Input tokens | 4502 |
+| Output tokens | 3000 |
+| Total tokens | 7502 |
+| Total estimated cost (INR) | 0.1515 |
+
+Average estimated cost per successful recorded call:
+
+- INR 0.1515 / 18 = approximately INR 0.00842.
+- Day 1 target: under INR 0.50.
+- Result: Target met in the observed local experiments.
+
+Observations:
+
+- The usage endpoint successfully aggregated LLM call
+  records from PostgreSQL.
+- Provider errors included deliberately introduced failures.
+- A provider error does not necessarily mean a user request failed.
+- Automatic fallback allowed requests to complete despite
+  primary-provider errors.
+- The recorded cost is an estimate based on configured
+  model prices, not an actual provider invoice.
+- The average uses successful recorded provider calls
+  as a proxy for answered questions.
+
+### Database verification
+
+Verified the llm_calls table using the Neon SQL Editor.
+
+```sql
+SELECT
+    created_at,
+    provider,
+    model,
+    status,
+    LEFT(error, 40) AS error,
+    tokens_in,
+    tokens_out,
+    latency_ms,
+    cost_inr,
+    fallback_used
+FROM llm_calls
+ORDER BY id DESC
+LIMIT 15;
+```
+
+Results:
+
+- Successful Groq calls were recorded.
+- Gemini HTTP 404 errors were recorded.
+- Gemini HTTP 429 rate-limit errors were recorded.
+- Input and output token counts were recorded.
+- Successful provider latency was recorded.
+- Estimated costs were recorded.
+- Fallback flags were recorded.
+- Failed provider calls recorded zero tokens and zero latency.
+
+Limitations:
+
+- Failed-call latency is not accurately represented because
+  the recorded latency is zero.
+- Zero estimated cost for a failed call does not independently
+  establish that the provider charged nothing.
+- The gateway records provider outcomes, which may not
+  represent every individual internal retry.
+
+### Docker and deployment preparation
+
+- Updated the existing multi-stage Dockerfile.
+- Added the prompts folder to the builder stage.
+- Added the prompts folder to the production runtime stage.
+- Verified that prompts/chat_system_v1.md exists.
+- Verified that .dockerignore does not exclude the prompts folder.
+- Verified that .env is excluded from the Docker build context.
+- Verified that .env does not appear in Git status.
+- Confirmed that the new migration and prompt files
+  appear in Git status.
+
+Dockerfile additions:
+
+Builder stage:
+
+```dockerfile
+COPY prompts/ ./prompts/
+```
+
+Runtime stage:
+
+```dockerfile
+COPY --from=builder --chown=app:app /app/prompts ./prompts
+```
+
+The actual updated Docker image build and production
+deployment remain to be verified.
+
+### Where my LLM secrets belong
+
+- GEMINI_API_KEY: Local .env and Render environment.
+- GROQ_API_KEY: Local .env and Render environment.
+- .env.example: Empty API key placeholders only.
+- Real LLM API keys must not be committed to Git.
+- GitHub Actions does not require real LLM API keys
+  because automated tests use FakeLLM.
+- Exposed credentials must be rotated before deployment.
+
+### Problems encountered and how I fixed them
+
+#### 1. Gemini provider availability
+
+Problem:
+
+Gemini returned a timeout, HTTP 503 and HTTP 429
+during the experiments.
+
+Resolution:
+
+- Used the gateway's retry and fallback mechanisms.
+- Groq successfully handled requests when Gemini failed.
+- Gemini successfully answered a later request.
+
+#### 2. Windows pytest launcher
+
+Problem:
+
+The Windows pytest launcher encountered a script
+execution issue.
+
+Resolution:
+
+Used:
+
+```powershell
+uv run python -m pytest
+```
+
+#### 3. Incorrect middleware import
+
+Problem:
+
+The application imported request_context instead of
+the existing request_context_middleware function.
+
+Resolution:
+
+Corrected the middleware import and registration
+in api/main.py.
+
+#### 4. Test fixture document IDs
+
+Problem:
+
+Existing tests expected document IDs such as DOC-001,
+but the modified fixtures used IDs such as 001.
+
+Resolution:
+
+Restored the expected DOC-prefixed document IDs.
+
+#### 5. Missing integration test marker
+
+Problem:
+
+The LLM call integration test was not correctly
+classified as an integration test.
+
+Resolution:
+
+Added the pytest integration marker and used the
+existing isolated integration test runner.
+
+#### 6. Ruff import formatting
+
+Problem:
+
+Ruff reported import ordering violations.
+
+Resolution:
+
+Corrected the import ordering and reran the lint checks.
+All checks passed.
+
+#### 7. Missing development task
+
+Problem:
+
+The trainer's command uv run poe dev did not work
+because the project does not define a dev task.
+
+Resolution:
+
+Started the application directly using:
+
+```powershell
+uv run python -m uvicorn a11ycoach.api.main:create_app --factory --reload --host 127.0.0.1 --port 8000
+```
+
+### Final local verification
+
+| Check | Result |
+|---|---|
+| Unit tests | 79 passed |
+| Integration tests | 9 passed |
+| Total tests | 88 passed |
+| Database migrations | All 4 applied successfully |
+| Integration-only coverage | 47% |
+| Ruff lint | Passed |
+| Streaming chat | Passed |
+| Non-streaming chat | Passed |
+| Groq fallback | Passed |
+| Gemini generation | Observed successfully |
+| Circuit breaker | Behaviour consistent with expected design |
+| Cooldown retry | Observed |
+| LLM call recording | Passed |
+| Usage endpoint | Passed |
+| Prompt file verification | Passed |
+| Dockerfile changes | Verified |
+| Production Docker build | Pending |
+
+The trainer's reference suite expects 89 tests.
+My current implementation contains 88 passing tests.
+The one-test difference has not yet been investigated.
+
+### Live deployment verification
+
+- Live URL: https://a11ycoach.onrender.com
+- Feature branch: feat/day-08-llm-gateway
+- Credential rotation: Awaiting confirmation.
+- Render environment configuration: Awaiting confirmation.
+- Commit: Pending.
+- Pull request: Pending.
+- CI: Pending.
+- Merge: Pending.
+- CD deployment: Pending.
+- Live health endpoint: Pending Day 8 verification.
+- Live readiness endpoint: Pending Day 8 verification.
+- Live streaming chat: Pending.
+- Live usage endpoint: Pending.
+- Live warm-request first-word latency: Pending.
+- Day 1 first-word latency target: Under 1.5 seconds.
+
+Live test command:
+
+```powershell
+uv run python scripts/ask.py "What does success criterion 1.4.3 Contrast (Minimum) require?" --url https://a11ycoach.onrender.com
+```
+
+Run the command twice after deployment and record
+the second, warm-request measurements.
+
+- Live provider: Pending.
+- Live model: Pending.
+- Fallback used: Pending.
+- First words after: Pending.
+- Total response time: Pending.
+- Input tokens: Pending.
+- Output tokens: Pending.
+- Estimated cost: Pending.
+
+Live usage endpoint:
+
+https://a11ycoach.onrender.com/v1/usage
+
+### What I learned today
+
+- An LLM integration is fundamentally an HTTP API integration.
+- A gateway separates application logic from provider-specific logic.
+- Retry handles temporary failures.
+- Fallback provides an alternative when the primary provider fails.
+- A circuit breaker avoids repeatedly calling an unhealthy provider.
+- Streaming can improve perceived responsiveness.
+- Token consumption varies across languages and models.
+- LLM usage and estimated costs should be measured.
+- Passing software tests does not guarantee factual accuracy
+  in AI-generated answers.
+- Authoritative document retrieval is important for reliable
+  accessibility guidance.
+
+### Day 8 status
+
+- Milestone 1 — Two LLM providers: Completed.
+- Milestone 2 — LLM calls database table: Completed.
+- Milestone 3 — LLM gateway: Completed.
+- Milestone 4 — Chat and usage endpoints: Completed.
+- Milestone 5 — Break it on purpose: Completed, with
+  post-restoration Gemini verification still pending.
+- Milestone 6 — Ship and deploy: In progress.
