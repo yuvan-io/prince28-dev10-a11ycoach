@@ -1,4 +1,3 @@
-
 # Stage 1: Build dependencies
 FROM python:3.12-slim AS builder
 
@@ -22,6 +21,7 @@ COPY alembic.ini ./
 COPY migrations/ ./migrations/
 COPY scripts/ ./scripts/
 COPY data/ ./data/
+COPY prompts/ ./prompts/
 
 # Install the project
 RUN uv sync --frozen --no-dev
@@ -50,6 +50,7 @@ COPY --from=builder --chown=app:app /app/alembic.ini ./alembic.ini
 COPY --from=builder --chown=app:app /app/migrations ./migrations
 COPY --from=builder --chown=app:app /app/scripts ./scripts
 COPY --from=builder --chown=app:app /app/data ./data
+COPY --from=builder --chown=app:app /app/prompts ./prompts
 
 USER app
 

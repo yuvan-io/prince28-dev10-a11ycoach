@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     database_url: str
     # The commit this image was built from. CI sets it (Dockerfile ARG GIT_SHA); locally "dev".
     git_sha: str = Field(default="dev", validation_alias="A11YCOACH_GIT_SHA")
+    # LLM gateway (Day 8)
+    gemini_api_key: str = ""
+    groq_api_key: str = ""
+    llm_primary_model: str = "gemini-3.8-flash"
+    llm_fallback_model: str = "openai/gpt-oss-20b"
+    llm_primary_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+    llm_fallback_base_url: str = "https://api.groq.com/openai/v1"
+    llm_timeout_seconds: float = 30.0
+    usd_inr: float = 95.0
+    prompts_dir: Path = Path("prompts")
 
 
 @lru_cache
