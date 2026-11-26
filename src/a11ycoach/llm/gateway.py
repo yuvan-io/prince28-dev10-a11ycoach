@@ -97,13 +97,27 @@ class OpenAICompatProvider:
         self.name, self.model = name, model
         self._url = base_url.rstrip("/") + "/chat/completions"
         self._headers = {"Authorization": f"Bearer {api_key}"}
-        # 10 s to connect; `timeout` seconds of silence at most while the answer arrives
         self._client = client or httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=10.0))
 
-    def _body(self, messages: list[Message], temperature: float, stream: bool) -> dict:
-        body = {"model": self.model, "messages": messages, "temperature": temperature}
+    def _body(
+        self,
+        messages: list[Message],
+        temperature: float,
+        stream: bool,
+        response_format: dict | None = None,
+    ) -> dict:
+        body = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+        }
         if stream:
-            body |= {"stream": True, "stream_options": {"include_usage": True}}
+            body |= {
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            }
+        if response_format:
+            body["response_format"] = response_format
         return body
 
     @staticmethod
@@ -112,99 +126,155 @@ class OpenAICompatProvider:
         wait = response.headers.get("retry-after", "")
         return LLMError(
             f"HTTP {code}: {response.text[:200]}",
-            retryable=code in {408, 429} or code >= 500,  # 400, 401, 404 will not heal
+            retryable=code in {408, 429} or code >= 500,
             retry_after=float(wait) if wait.replace(".", "", 1).isdigit() else None,
         )
 
     @staticmethod
     def _network_error(exc: httpx.TransportError) -> LLMError:
-        # A timeout has already used up the waiting time: move to the next provider instead
-        # of waiting again. A refused or dropped connection fails fast: one more try is cheap.
         timed_out = isinstance(exc, httpx.TimeoutException)
-        return LLMError(type(exc).__name__, retryable=not timed_out)
+        return LLMError(
+            type(exc).__name__,
+            retryable=not timed_out,
+        )
 
-    async def generate(self, messages: list[Message], *, temperature: float = 0.2) -> Reply:
-        body = self._body(messages, temperature, stream=False)
+    async def generate(
+        self,
+        messages: list[Message],
+        *,
+        temperature: float = 0.2,
+        response_format: dict | None = None,
+    ) -> Reply:
+        body = self._body(messages, temperature, False, response_format)
         try:
-            response = await self._client.post(self._url, headers=self._headers, json=body)
+            response = await self._client.post(
+                self._url,
+                headers=self._headers,
+                json=body,
+            )
         except httpx.TransportError as exc:
             raise self._network_error(exc) from exc
+
         if response.status_code != 200:
             raise self._error(response)
+
         data = response.json()
         usage = data.get("usage") or {}
         text = data["choices"][0]["message"].get("content") or ""
-        return Reply(text, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+
+        return Reply(
+            text,
+            usage.get("prompt_tokens", 0),
+            usage.get("completion_tokens", 0),
+        )
 
     async def stream(
-        self, messages: list[Message], usage: Reply, *, temperature: float = 0.2
+        self,
+        messages: list[Message],
+        usage: Reply,
+        *,
+        temperature: float = 0.2,
     ) -> AsyncIterator[str]:
-        """Yield the answer piece by piece (server-sent events). Fills `usage` at the end."""
+        """Yield the answer piece by piece."""
         body = self._body(messages, temperature, stream=True)
+
         try:
             async with self._client.stream(
-                "POST", self._url, headers=self._headers, json=body
+                "POST",
+                self._url,
+                headers=self._headers,
+                json=body,
             ) as response:
                 if response.status_code != 200:
                     await response.aread()
                     raise self._error(response)
+
                 finished = False
+
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
                         continue
+
                     payload = line[5:].strip()
+
                     if payload == "[DONE]":
                         finished = True
                         break
+
                     chunk = json.loads(payload)
+
                     if chunk.get("usage"):
                         usage.tokens_in = chunk["usage"].get("prompt_tokens", 0)
                         usage.tokens_out = chunk["usage"].get("completion_tokens", 0)
+
                     for choice in chunk.get("choices") or []:
                         finished = finished or bool(choice.get("finish_reason"))
                         piece = (choice.get("delta") or {}).get("content")
                         if piece:
                             yield piece
-                if not finished:  # the connection closed before the provider said "done"
-                    raise LLMError("the stream ended early", retryable=True)
+
+                if not finished:
+                    raise LLMError(
+                        "the stream ended early",
+                        retryable=True,
+                    )
+
         except httpx.TransportError as exc:
             raise self._network_error(exc) from exc
 
 
 class FakeLLM:
-    """A scripted provider for tests: no network, no bill.
+    """A scripted provider for tests: no network, no bill."""
 
-    `script` holds what each call does, in order: a string is the answer, an exception is
-    raised, and ("partial", error) streams half an answer and then fails.
-    """
-
-    def __init__(self, name: str = "fake", model: str = "fake-1", script: list | None = None):
+    def __init__(
+        self,
+        name: str = "fake",
+        model: str = "fake-1",
+        script: list | None = None,
+    ):
         self.name, self.model = name, model
         self.script = list(script or [])
         self.calls = 0
+        self.seen: list[dict] = []
 
     def _next(self) -> object:
         self.calls += 1
         return self.script.pop(0) if self.script else "A fake answer."
 
-    async def generate(self, messages: list[Message], *, temperature: float = 0.2) -> Reply:
+    async def generate(self, messages: list[Message], **options) -> Reply:
+        self.seen.append({"messages": messages, **options})
         item = self._next()
+
         if isinstance(item, Exception):
             raise item
-        return Reply(str(item), tokens_in=12, tokens_out=len(str(item).split()))
+
+        return Reply(
+            str(item),
+            tokens_in=12,
+            tokens_out=len(str(item).split()),
+        )
 
     async def stream(
-        self, messages: list[Message], usage: Reply, *, temperature: float = 0.2
+        self,
+        messages: list[Message],
+        usage: Reply,
+        *,
+        temperature: float = 0.2,
     ) -> AsyncIterator[str]:
         item = self._next()
+
         if isinstance(item, Exception):
             raise item
-        error = item[1] if isinstance(item, tuple) else None  # ("partial", error)
+
+        error = item[1] if isinstance(item, tuple) else None
         words = ("Half an answer" if error else str(item)).split()
+
         for word in words:
             yield word + " "
+
         if error:
             raise error
+
         usage.tokens_in, usage.tokens_out = 12, len(words)
 
 
