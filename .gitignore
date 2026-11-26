@@ -38,3 +38,5 @@ data/raw/
 
 # Incomplete downloads
 *.part
+
+eval/cache/

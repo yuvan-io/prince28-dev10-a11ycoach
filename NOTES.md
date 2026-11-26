@@ -1005,3 +1005,1026 @@ https://a11ycoach.onrender.com/v1/usage
 - Milestone 5 — Break it on purpose: Completed, with
   post-restoration Gemini verification still pending.
 - Milestone 6 — Ship and deploy: In progress.
+
+## D09 · Prompts and structured output
+
+### Objectives
+
+- Implement versioned prompts.
+- Build a question classifier for A11yCoach.
+- Evaluate classifier accuracy using a labelled test set.
+- Compare prompt versions and improve classification accuracy.
+- Define a structured metadata contract using Pydantic.
+- Extract and validate document metadata using an LLM.
+- Store extracted metadata in PostgreSQL.
+- Support automatic repair, resumability and prompt versioning.
+- Verify metadata filtering through the API.
+
+### Prompt versions compared
+
+<!-- prompts:start -->
+
+| Prompt version | Correct | Accuracy | Invalid replies | Avg tokens in |
+|---|---|---|---|---|
+| classify_v1 | 12/20 | 60% | 1 | 111 |
+| classify_v2 | 19/20 | 95% | 0 | 284 |
+| classify_v3 | 19/20 | 95% | 0 | 410 |
+| classify_v4 | 20/20 | 100% | 0 | 310 |
+
+<!-- prompts:end -->
+
+### Question router
+
+The question router classifies user questions into three categories:
+
+- docs: Questions that can be answered using A11yCoach's
+  accessibility documents.
+- personal: Questions requiring private information,
+  live information or evidence about a specific situation.
+- off_topic: Questions unrelated to accessibility.
+
+The classifier uses temperature 0 to reduce unnecessary
+variation in its responses.
+
+User questions are enclosed in question tags and treated
+as data rather than instructions.
+
+### Evaluation dataset
+
+- Dataset: eval/prompt_testset.jsonl.
+- Total labelled questions: 20.
+- Documentation questions: 9.
+- Personal questions: 6.
+- Off-topic questions: 5.
+- Includes a prompt injection attempt.
+- Includes an intentionally unanswerable private policy question.
+- No TODO placeholders remain.
+- Labels changed after seeing the evaluation results: None.
+- Independent classmate review: Not yet confirmed.
+
+The generated evaluation cache is excluded from Git
+through the eval/cache/ entry in .gitignore.
+
+### Prompt evaluation findings
+
+- classify_v1 achieved 12/20 (60%).
+- classify_v2 achieved 19/20 (95%).
+- classify_v3 achieved 19/20 (95%).
+- classify_v4 achieved 20/20 (100%).
+
+Both v2 and v3 incorrectly classified the question:
+
+"Is our website legally compliant in India?"
+
+Expected label: personal.
+
+Predicted label: off_topic.
+
+I selected v2 as the base for v4 because v2 and v3
+achieved the same accuracy, while v2 required fewer
+input tokens.
+
+In v4, I improved the personal label definition to
+explicitly include website-specific legal compliance,
+audit outcomes, accessibility status and certification
+questions that require evidence about a particular website.
+
+This change resolved the remaining classification error.
+
+Additional observations:
+
+- v4 correctly classified the prompt injection attempt.
+- v4 correctly classified the private EduApp policy question.
+- No LEAK warnings were reported.
+- The initial comparison made 56 new model calls
+  and reused 4 cached answers.
+- The second comparison made 20 new model calls
+  and reused 60 cached answers.
+- Total new model calls across both comparisons: 76.
+- All 26 classifier and gateway unit tests passed.
+
+### My best router prompt
+
+- Selected prompt: classify_v4.
+- Correct classifications: 20/20.
+- Accuracy: 100%.
+- Invalid replies: 0.
+- Average input tokens: 310.
+- Questions my best version still gets wrong:
+  None on the current development test set.
+
+### Is the extra accuracy worth the tokens?
+
+| Metric | v1 | v4 |
+|---|---:|---:|
+| Accuracy | 60% | 100% |
+| Correct classifications | 12 | 20 |
+| Invalid replies | 1 | 0 |
+| Average input tokens | 111 | 310 |
+
+- Accuracy improved by 40 percentage points.
+- Average input tokens increased by 199 compared with v1.
+- v4 uses approximately 24.39% fewer input tokens than v3.
+- v4 provides better classification accuracy than v3
+  while requiring fewer input tokens.
+
+The additional input tokens are justified by the improvement
+in classification accuracy on the current evaluation dataset.
+
+Limitation:
+
+The 100% accuracy was measured on a small development
+dataset used to refine the prompt. It does not establish
+100% accuracy on unseen questions.
+
+A separate evaluation dataset is required to measure
+generalisation performance.
+
+### My contract (DocMeta)
+
+Implemented a Pydantic model in:
+
+src/a11ycoach/llm/doc_meta.py
+
+The metadata contract contains ten fields.
+
+| Field | Purpose |
+|---|---|
+| doc_kind | Document category |
+| year | Publication or effective year |
+| language | Main document language |
+| summary | Short document description |
+| topics | Main accessibility topics |
+| criterion_id | WCAG success criterion identifiers |
+| level | WCAG conformance levels |
+| wcag_version | Relevant WCAG versions |
+| technique_id | W3C technique or failure identifiers |
+| technique_type | Technique or failure categories |
+
+Common fields retained:
+
+- doc_kind
+- year
+- language
+- summary
+- topics
+
+Domain-specific fields retained:
+
+- criterion_id
+- level
+- wcag_version
+- technique_id
+- technique_type
+
+Fields deleted: None.
+
+All five domain-specific fields are relevant to A11yCoach.
+
+Field tightened:
+
+The level field accepts only the following values:
+
+- A
+- AA
+- AAA
+
+Validation rules:
+
+- Unexpected fields are rejected.
+- Publication year must be between 1950 and 2027,
+  or null when unavailable.
+- Language must be en, ta, hi or other.
+- Summary length must be between 20 and 300 characters.
+- Topics must contain between 1 and 6 values.
+- Domain-specific lists contain at most 8 values.
+- Short string values contain at most 80 characters.
+- Topics are converted to lowercase and deduplicated.
+- Missing domain-specific information is represented
+  using empty lists.
+
+### Structured extraction engine
+
+Implemented in:
+
+src/a11ycoach/llm/extract.py
+
+Features:
+
+- Uses a versioned extraction prompt.
+- Includes the Pydantic JSON schema in the model instructions.
+- Supports optional native JSON schema output.
+- Parses JSON from the model response.
+- Validates extracted metadata using Pydantic.
+- Automatically requests corrections for invalid responses.
+- Allows up to three extraction attempts.
+- Records extraction prompt version, model and attempt count.
+- Records validation errors when extraction fails.
+- Preserves existing parser metadata.
+- Stores extraction results in PostgreSQL JSONB metadata.
+- Commits results after each processed document.
+- Skips documents already processed by the selected prompt.
+- Supports retrying failed extractions.
+- Supports re-extraction when the prompt version changes.
+- Stops gracefully when all LLM providers are unavailable.
+
+The extraction engine reads up to the first three parsed
+pages of each document, limited to 6,000 characters by default.
+
+This reduces input token consumption but may omit relevant
+information located later in a document.
+
+### Extraction CLI
+
+Implemented in:
+
+scripts/extract_metadata.py
+
+Supported options:
+
+| Option | Purpose |
+|---|---|
+| --limit | Limit the number of documents processed |
+| --rpm | Control the document processing rate |
+| --chars | Set the maximum input character count |
+| --retry-failed | Retry previously failed extractions |
+| --schema | Request native JSON schema output |
+
+The CLI reports:
+
+- Prompt version.
+- Pending documents.
+- Successful extractions.
+- Repaired responses.
+- Failed extractions.
+- Input tokens.
+- Output tokens.
+- Estimated cost.
+- Total duration.
+
+### Metadata extraction trial — v1
+
+Command:
+
+```powershell
+uv run python scripts/extract_metadata.py --limit 5
+```
+
+Results:
+
+| Metric | Result |
+|---|---:|
+| Prompt version | extract_v1 |
+| Documents processed | 5 |
+| Successful extractions | 5 |
+| Repaired responses | 0 |
+| Failed extractions | 0 |
+| Input tokens | 10,312 |
+| Output tokens | 3,661 |
+| Estimated cost (INR) | 0.1778 |
+| Duration | 56 seconds |
+
+Observed problem:
+
+W3C Understanding documents were inconsistently classified
+as guideline, rule and tutorial despite belonging to
+the same document family.
+
+WCAG version formatting was also inconsistent.
+
+Improvement:
+
+Created extract_v2 to improve document category consistency,
+WCAG version formatting and identifier formatting.
+
+The original extract_v1 prompt was retained for reproducibility.
+
+### Metadata extraction trial — v2
+
+Command:
+
+```powershell
+uv run python scripts/extract_metadata.py --limit 5
+```
+
+Results:
+
+| Metric | Result |
+|---|---:|
+| Prompt version | extract_v2 |
+| Documents processed | 5 |
+| Successful extractions | 5 |
+| Repaired responses | 0 |
+| Failed extractions | 0 |
+| Input tokens | 11,062 |
+| Output tokens | 3,634 |
+| Estimated cost (INR) | 0.1824 |
+| Duration | 44 seconds |
+
+Improvements:
+
+- All five sampled W3C Understanding documents were
+  consistently classified as reference.
+- Populated WCAG version values used numeric strings.
+- Criterion identifiers used the expected numeric format.
+- Conformance levels used valid A or AA values.
+- All five records passed Pydantic validation.
+- All five records were stored successfully in PostgreSQL.
+
+### Manual source verification
+
+The following two original W3C documents were inspected
+against their extracted metadata:
+
+1. Understanding SC 2.1.1 Keyboard.
+2. Understanding SC 2.4.7 Focus Visible.
+
+| Document | Expected criterion | Extracted criterion | Expected level | Extracted level |
+|---|---|---|---|---|
+| Keyboard | 2.1.1 | 2.1.1 | A | A |
+| Focus Visible | 2.4.7 | 2.4.7 | AA | AA |
+
+The criterion identifiers, conformance levels and main
+topics were accurate for these two sampled documents.
+
+Remaining observations:
+
+- The model assigned WCAG version 2.1 to the Keyboard
+  document without explicit supporting evidence in
+  the inspected text.
+- Some technique identifiers were omitted.
+- Missing publication years were represented as null.
+- The extraction input limit may omit information
+  appearing later in a document.
+
+Additional factual discrepancies were identified during
+the API metadata review.
+
+| Document | Extracted value | Correct value |
+|---|---|---|
+| Page Titled | Level AA | Level A |
+| Audio Control | Criterion 2.2.1 | Criterion 1.4.2 |
+| Contrast (Enhanced) | Criterion 1.4.3 | Criterion 1.4.6 |
+
+Original W3C references:
+
+- https://www.w3.org/WAI/WCAG22/Understanding/keyboard.html
+- https://www.w3.org/WAI/WCAG22/Understanding/focus-visible.html
+- https://www.w3.org/WAI/WCAG22/Understanding/page-titled.html
+- https://www.w3.org/WAI/WCAG22/Understanding/audio-control.html
+- https://www.w3.org/WAI/WCAG22/Understanding/contrast-enhanced.html
+
+The final manual verification of the last three original
+documents remains to be confirmed.
+
+Decision:
+
+Use extract_v2 for the corpus extraction while retaining
+extract_v1 for reproducibility.
+
+### Whole corpus extraction
+
+Command:
+
+```powershell
+uv run python scripts/extract_metadata.py
+```
+
+Estimated eligible corpus: 321 documents.
+
+Five documents had already been processed successfully
+using extract_v2 during the trial.
+
+#### Corpus extraction — Run 1
+
+| Metric | Result |
+|---|---:|
+| Prompt version | extract_v2 |
+| Pending at start | 316 |
+| Successful extractions | 78 |
+| Repaired responses | 15 |
+| Failed extractions | 0 |
+| Input tokens | 119,131 |
+| Output tokens | 93,693 |
+| Estimated cost (INR) | 3.5191 |
+| Duration | 1,559 seconds |
+
+Observed validation issues:
+
+- Some summaries exceeded the 300-character limit.
+- Some initial responses contained no JSON object.
+- The automatic repair mechanism recovered 15 responses.
+
+The extraction stopped gracefully when the LLM providers
+became unavailable.
+
+Gemini reported HTTP 429 quota exhaustion.
+
+Successfully processed documents remained stored
+in PostgreSQL.
+
+#### Corpus extraction — Run 2
+
+The same command was executed again to verify resumability.
+
+```powershell
+uv run python scripts/extract_metadata.py
+```
+
+| Metric | Result |
+|---|---:|
+| Prompt version | extract_v2 |
+| Pending at start | 238 |
+| Successful extractions | 1 |
+| Repaired responses | 0 |
+| Failed extractions | 0 |
+| Input tokens | 1,181 |
+| Output tokens | 548 |
+| Estimated cost (INR) | 0.0240 |
+| Duration | 123 seconds |
+
+The extraction resumed without reprocessing the documents
+already completed using extract_v2.
+
+The run stopped again because Gemini was unavailable
+and Groq returned HTTP 429 rate-limit errors.
+
+This verified that extraction is resumable and that
+previously completed results are preserved.
+
+### Final extraction status
+
+| Metric | Result |
+|---|---:|
+| Estimated eligible corpus | 321 |
+| Successful trial documents using v2 | 5 |
+| Successful corpus Run 1 documents | 78 |
+| Successful corpus Run 2 documents | 1 |
+| Total unique successfully extracted documents | 84 |
+| Automatically repaired responses | 15 |
+| Recorded extraction failures | 0 |
+| Remaining documents | 237 |
+| Estimated extraction coverage | 26.17% |
+| Minimum Day 9 requirement | 50 documents |
+
+The minimum Day 9 extraction requirement was exceeded
+by 34 documents.
+
+All 84 completed documents passed structural validation.
+
+Zero recorded extraction failures does not mean that
+all documents were processed or that every extracted
+metadata value is factually correct.
+
+The remaining 237 documents are deferred until provider
+quotas become available.
+
+To resume:
+
+```powershell
+uv run python scripts/extract_metadata.py
+```
+
+The extractor skips documents already processed using
+the selected prompt version.
+
+### Extraction cost
+
+| Run | Estimated cost (INR) |
+|---|---:|
+| extract_v1 trial | 0.1778 |
+| extract_v2 trial | 0.1824 |
+| Corpus extraction Run 1 | 3.5191 |
+| Corpus extraction Run 2 | 0.0240 |
+| Total | 3.9033 |
+
+Total reported extraction input tokens: 141,686.
+
+Total reported extraction output tokens: 101,536.
+
+Total reported extraction tokens: 243,222.
+
+Effective estimated extraction cost per unique
+successfully processed document:
+
+INR 3.9033 / 84 = approximately INR 0.0465.
+
+This includes the cost of both prompt trials and
+the two corpus extraction runs.
+
+The cost excludes classifier prompt comparison calls
+and other unrelated LLM requests.
+
+These are estimated costs based on configured model
+prices, not actual provider invoices.
+
+### Neon database verification
+
+Verified extraction results using the Neon SQL Editor.
+
+#### Successful and failed extractions by prompt
+
+```sql
+SELECT
+    metadata->'extract'->>'prompt' AS prompt,
+    COUNT(*) FILTER (
+        WHERE NOT (metadata->'extract' ? 'error')
+    ) AS ok,
+    COUNT(*) FILTER (
+        WHERE metadata->'extract' ? 'error'
+    ) AS failed
+FROM documents
+WHERE doc_type <> 'record'
+  AND metadata ? 'extract'
+GROUP BY 1;
+```
+
+Observed result:
+
+| Prompt | Successful | Failed |
+|---|---:|---:|
+| extract_v2 | 84 | 0 |
+
+#### Extraction errors grouped by reason
+
+```sql
+SELECT
+    metadata->'extract'->>'error' AS error,
+    COUNT(*) AS documents
+FROM documents
+WHERE metadata->'extract' ? 'error'
+GROUP BY 1
+ORDER BY 2 DESC;
+```
+
+Observed result:
+
+No rows returned.
+
+There were no recorded terminal extraction errors
+at the time of verification.
+
+Provider quota exhaustion prevented further processing
+but did not create failed metadata records.
+
+#### Document category distribution
+
+```sql
+SELECT
+    metadata->>'doc_kind' AS kind,
+    COUNT(*) AS documents
+FROM documents
+WHERE metadata ? 'doc_kind'
+GROUP BY 1
+ORDER BY 2 DESC;
+```
+
+Observed result:
+
+| Document category | Documents |
+|---|---:|
+| guideline | 64 |
+| reference | 18 |
+| notice | 1 |
+| list | 1 |
+| Total | 84 |
+
+The metadata was successfully stored in PostgreSQL
+and could be queried using JSONB fields.
+
+### API metadata filtering
+
+Started the local application using:
+
+```powershell
+uv run python -m uvicorn a11ycoach.api.main:create_app --factory --reload --host 127.0.0.1 --port 8000
+```
+
+Verified the following endpoints:
+
+| Endpoint | HTTP status |
+|---|---|
+| /docs | 200 |
+| /openapi.json | 200 |
+| /v1/documents?doc_kind=guideline&limit=3 | 200 |
+| /v1/documents?doc_kind=reference&limit=3 | 200 |
+| /v1/documents?language=en&limit=3 | 200 |
+| /v1/documents?criterion_id=1.4.3&limit=3 | 200 |
+
+Observed filtering results:
+
+| Filter | Matching documents |
+|---|---:|
+| doc_kind=guideline | 64 |
+| doc_kind=reference | 18 |
+| language=en | 80 |
+| criterion_id=1.4.3 | 5 |
+
+All four metadata filter requests returned HTTP 200
+and respected the requested pagination limit.
+
+The criterion_id filter retrieved both existing
+structured records and newly extracted documents.
+
+This verified that the existing API can query
+LLM-generated metadata.
+
+However, correct filtering does not guarantee that
+the stored metadata itself is factually correct.
+
+### Valid but incorrect metadata
+
+The following factual discrepancies were observed
+during metadata review:
+
+1. Page Titled was assigned Level AA instead of Level A.
+
+2. Audio Control was assigned criterion 2.2.1 instead
+   of criterion 1.4.2.
+
+3. Contrast (Enhanced) was assigned criterion 1.4.3
+   instead of criterion 1.4.6.
+
+These values passed structural validation because
+they satisfied the metadata schema.
+
+The schema did not verify whether a criterion identifier
+or conformance level matched the actual document.
+
+Lesson learned:
+
+Pydantic guarantees that data conforms to the defined
+structure and validation rules. It does not independently
+guarantee factual correctness.
+
+Incorrect metadata can cause irrelevant documents
+to appear in retrieval results.
+
+Future improvements:
+
+- Validate criterion identifiers against an authoritative
+  WCAG success criterion mapping.
+- Validate criterion titles and conformance levels together.
+- Extract identifiers deterministically from source headings
+  and trusted document metadata where possible.
+- Avoid inferring WCAG versions without supporting evidence.
+- Inspect additional document content when technique
+  identifiers are missing.
+- Evaluate metadata factual accuracy separately from
+  schema validation success.
+
+### Automated tests
+
+Added tests for:
+
+- Prompt version discovery and numeric version ordering.
+- Question classification.
+- Question tag construction.
+- Classification accuracy calculation.
+- Prompt leakage detection.
+- Classifier temperature and usage recording.
+- Optional response_format forwarding.
+- JSON parsing.
+- Invalid JSON handling.
+- Pydantic schema validation.
+- Automatic extraction repair.
+- Maximum extraction attempts.
+- Native JSON schema mode.
+- DocMeta field validation.
+- Extraction prompt field coverage.
+- Metadata persistence.
+- Preservation of existing parser metadata.
+- Extraction resumability.
+- Prompt version changes.
+- Retrying failed extractions.
+- Graceful stopping when providers are unavailable.
+
+Targeted test results:
+
+| Test group | Passed |
+|---|---:|
+| Classifier and gateway | 26 |
+| Extraction unit tests | 8 |
+| Combined targeted unit tests | 34 |
+
+Final complete test suite:
+
+| Test group | Passed |
+|---|---:|
+| Unit tests | 94 |
+| Integration tests | 10 |
+| Total automated tests | 104 |
+
+Integration-only coverage: 49%.
+
+Extraction module integration coverage: 96%.
+
+The integration runner:
+
+- Created a fresh temporary PostgreSQL database.
+- Applied all four database migrations.
+- Executed the integration tests.
+- Removed the temporary database after completion.
+
+The production Neon corpus was not used as the
+destructive integration test database.
+
+### Problems encountered and how I fixed them
+
+#### 1. Windows pytest launcher
+
+Problem:
+
+The pytest launcher reported a script path
+canonicalisation error.
+
+Resolution:
+
+Executed pytest through the Python module interface.
+
+```powershell
+uv run python -m pytest
+```
+
+#### 2. Missing FakeLLM request tracking
+
+Problem:
+
+The classifier test failed because FakeLLM did not
+provide the seen attribute.
+
+Resolution:
+
+Added request tracking to FakeLLM so tests could
+inspect messages and generation options.
+
+The classifier and gateway tests passed afterward.
+
+#### 3. Missing integration test marker
+
+Problem:
+
+The new extraction integration test was executed
+as part of the unit test suite.
+
+It failed because DATABASE_URL was unavailable.
+
+Resolution:
+
+Added the integration marker:
+
+```python
+pytestmark = pytest.mark.integration
+```
+
+The integration test was then correctly excluded
+from the unit test suite and executed using the
+isolated integration test runner.
+
+#### 4. Duplicate import and Ruff violations
+
+Problem:
+
+The extraction integration test contained a
+duplicate Literal import.
+
+Resolution:
+
+```powershell
+uv run ruff check tests/integration/test_extract_store.py --fix
+```
+
+Ruff corrected the import issue.
+
+Subsequent lint checks passed.
+
+#### 5. Inconsistent metadata categories
+
+Problem:
+
+Similar W3C Understanding documents were assigned
+different document categories.
+
+Resolution:
+
+Created extract_v2 with clearer category and
+formatting instructions.
+
+All five trial documents were consistently
+classified as reference after re-extraction.
+
+#### 6. Invalid structured output
+
+Problem:
+
+Some LLM responses contained no JSON object or
+summaries exceeding the permitted length.
+
+Resolution:
+
+Used Pydantic validation and automatic correction
+requests.
+
+The extraction engine recovered 15 responses
+without recording terminal extraction failures.
+
+#### 7. LLM provider quota exhaustion
+
+Problem:
+
+Gemini and Groq became unavailable due to quota
+and rate limits during corpus extraction.
+
+Resolution:
+
+The extractor waited 60 seconds and retried.
+
+When the providers remained unavailable, the
+extractor stopped gracefully.
+
+Previously completed records remained stored
+in PostgreSQL.
+
+A subsequent run resumed successfully.
+
+The remaining documents will be processed when
+provider quotas become available.
+
+#### 8. Missing Poe development task
+
+Problem:
+
+The command uv run poe dev failed because the
+project does not define a dev task.
+
+Resolution:
+
+Started Uvicorn directly:
+
+```powershell
+uv run python -m uvicorn a11ycoach.api.main:create_app --factory --reload --host 127.0.0.1 --port 8000
+```
+
+The local application started successfully.
+
+#### 9. Non-blocking warnings
+
+Observed warnings:
+
+- Starlette TestClient httpx deprecation warning.
+- urllib3 optional PySocks dependency warning.
+- Duplicate OpenAPI operation ID for the health endpoint.
+- Missing favicon returning HTTP 404.
+
+These warnings did not prevent automated tests,
+metadata extraction or API filtering from succeeding.
+
+They remain separate maintenance items.
+
+### Final local verification
+
+| Check | Result |
+|---|---|
+| Versioned prompt loader | Passed |
+| Question classifier | Passed |
+| Evaluation dataset | 20 labelled questions |
+| Best classifier prompt | classify_v4 |
+| Development dataset accuracy | 100% |
+| Prompt leakage check | No warnings |
+| Structured metadata contract | Passed |
+| Best extraction prompt | extract_v2 |
+| Five-document extraction trial | Passed |
+| Automatic repair | 15 recovered responses |
+| Metadata persistence | Passed |
+| Extraction resumability | Passed |
+| Successfully extracted documents | 84 |
+| Minimum 50-document requirement | Met |
+| Recorded extraction failures | 0 |
+| Neon database verification | Passed |
+| Document category filtering | Passed |
+| Language filtering | Passed |
+| Criterion identifier filtering | Passed |
+| Unit tests | 94 passed |
+| Integration tests | 10 passed |
+| Total automated tests | 104 passed |
+| Ruff lint | Passed |
+| Full corpus extraction | Deferred due to quotas |
+| Metadata factual accuracy | Further improvement required |
+
+### Files added
+
+Prompts:
+
+- prompts/classify_v1.md
+- prompts/classify_v2.md
+- prompts/classify_v3.md
+- prompts/classify_v4.md
+- prompts/extract_v1.md
+- prompts/extract_v2.md
+
+Evaluation:
+
+- eval/prompt_testset.jsonl
+
+Scripts:
+
+- scripts/compare_prompts.py
+- scripts/extract_metadata.py
+
+Application modules:
+
+- src/a11ycoach/llm/prompts.py
+- src/a11ycoach/llm/classify.py
+- src/a11ycoach/llm/doc_meta.py
+- src/a11ycoach/llm/extract.py
+
+Tests:
+
+- tests/unit/test_classify.py
+- tests/unit/test_extract.py
+- tests/integration/test_extract_store.py
+
+### Files modified
+
+- .gitignore
+- NOTES.md
+- src/a11ycoach/llm/gateway.py
+- tests/unit/test_gateway.py
+
+### What I learned today
+
+- Prompt wording affects classification accuracy.
+- Few-shot examples do not always improve results.
+- Versioned prompts make experiments reproducible.
+- Evaluation datasets help measure prompt quality.
+- Cached evaluation results avoid unnecessary LLM calls.
+- Structured output makes LLM responses easier to process.
+- Pydantic validation detects malformed responses.
+- Automatic correction can recover invalid model outputs.
+- Metadata extraction supports document filtering.
+- Saving progress after each document enables resumability.
+- Provider quotas affect large-scale extraction workloads.
+- Structural correctness does not guarantee factual accuracy.
+- Authoritative source verification remains essential.
+
+### Remaining limitations
+
+- The classifier was evaluated on a small development dataset.
+- Independent evaluation on unseen questions is required.
+- Classmate review of the evaluation dataset is unconfirmed.
+- Final manual source verification of three additional
+  documents is unconfirmed.
+- Some extracted metadata contains factual inaccuracies.
+- The extraction input limit may omit relevant information.
+- The remaining 237 documents have not been processed.
+- The question router has been implemented and tested
+  independently; integration into the live chat request
+  flow has not been verified.
+- Retrieval-Augmented Generation is not yet implemented
+  as part of today's work.
+
+### Live deployment verification
+
+- Live URL: https://a11ycoach.onrender.com
+- Feature branch: day09-prompts
+- Commit: Pending.
+- Pull request: Pending.
+- CI: Pending.
+- Merge: Pending.
+- CD deployment: Pending.
+- Live health endpoint: Pending Day 9 verification.
+- Live readiness endpoint: Pending Day 9 verification.
+- Live document metadata filtering: Pending.
+- Uptime monitor: Pending final verification.
+
+Live endpoints to verify after deployment:
+
+```text
+https://a11ycoach.onrender.com/health
+https://a11ycoach.onrender.com/ready
+https://a11ycoach.onrender.com/docs
+https://a11ycoach.onrender.com/v1/documents?doc_kind=guideline&limit=3
+https://a11ycoach.onrender.com/v1/documents?doc_kind=reference&limit=3
+https://a11ycoach.onrender.com/v1/documents?language=en&limit=3
+https://a11ycoach.onrender.com/v1/documents?criterion_id=1.4.3&limit=3
+```
+
+### Day 9 status
+
+- Milestone 1 — Versioned prompts and question router:
+  Completed.
+- Milestone 2 — Labelled evaluation dataset:
+  Technical implementation completed; classmate review
+  remains unconfirmed.
+- Milestone 3 — Prompt comparison and improvement:
+  Completed.
+- Milestone 4 — Structured metadata extraction:
+  Completed.
+- Milestone 5 — Corpus extraction and metadata filtering:
+  Minimum extraction requirement achieved, with full
+  corpus processing and final manual review outstanding.
+- Milestone 6 — Notes, pull request and live check:
+  In progress.
+
+Day 9 implementation is ready for final Git verification
+and submission, with the remaining limitations documented.
