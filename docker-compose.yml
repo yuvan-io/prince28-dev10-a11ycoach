@@ -1,10 +1,11 @@
-﻿services:
+﻿
+services:
   db:
     image: pgvector/pgvector:pg17
     environment:
       POSTGRES_DB: a11ycoach
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: postgres  # pragma: allowlist secret
     ports:
       - "5432:5432"
     volumes:
@@ -29,9 +30,11 @@
     build: .
     env_file:
       - .env
-    environment:
+    environment: &app-env
       APP_ENV: local
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/a11ycoach
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/a11ycoach  # pragma: allowlist secret
+      REDIS_URL: redis://redis:6379
+      WORKER_IN_API: "false"
     command: ["alembic", "upgrade", "head"]
     depends_on:
       db:
@@ -40,11 +43,10 @@
 
   api:
     build: .
-    env_file:
-      - .env
-    environment:
-      APP_ENV: local
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/a11ycoach
+    environment: *app-env
+    env_file: &keys
+      - path: .env
+        required: false
     ports:
       - "8000:8000"
     depends_on:
@@ -61,6 +63,21 @@
       interval: 10s
       timeout: 5s
       retries: 5
+
+  worker:
+    build: .
+    command: ["arq", "a11ycoach.workers.main.WorkerSettings"]
+    environment: *app-env
+    env_file: *keys
+    volumes:
+      - ./data/raw:/app/data/raw:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data:

@@ -2028,3 +2028,80 @@ https://a11ycoach.onrender.com/v1/documents?criterion_id=1.4.3&limit=3
 
 Day 9 implementation is ready for final Git verification
 and submission, with the remaining limitations documented.
+
+### D10 · Queue and worker
+
+- First run: 10 documents queued, finished in 197 s. Done 9, skipped 0, failed 1.
+- Second run: 10 documents queued, finished in 196 s. Done 9, skipped 0, failed 1.
+- Pace: 19.7 s per requested document in the first batch, including retries and provider delays.
+- Configured INGEST_RPM = 12, INGEST_CONCURRENCY = 2 (default settings; verify against local configuration).
+- The API returned HTTP 202 immediately while the background worker processed documents asynchronously.
+
+### Kill test
+
+- Job ID: `fc4ab8a40f5945eb8619e2434b6f8ed9`
+- Queued: 20.
+- At the kill: queued 13, running 2, done 5, failed 0.
+- Last progress before interruption: 56 s.
+- First reported progress after recovery: 177 s.
+- Observed interruption and recovery gap: 121 s.
+- After the new worker: done 20 + skipped 0 + failed 0 = 20.
+- Final completion time: 372 s.
+- Pages processed: 59.
+- Documents in the database: 321, different external IDs: 321.
+- Lost items: 0.
+- Duplicate external IDs: 0.
+- Interrupted items 48 and 49 both completed with two attempts.
+- The interrupted jobs had to wait for their Redis locks to expire before they could be processed again.
+- Nothing was doubled because the worker checks document identity and existing processing results before repeating work.
+- Health endpoint returned status ok. Localhost verification during the interruption is pending confirmation.
+
+### Dead-letter list
+
+| Stage | Items | What I did |
+|---|---:|---|
+| Parse | 0 | No action required |
+| Extract validation | 0 | No action required |
+| Download | 0 | No action required |
+| Gave up after retries | 5 historical failures | Retried four failed items; one completed, two were skipped and one failed again due to the daily token limit |
+
+- Retry job ID: `9e44eb7a86f44e398adf434874a57e23`
+- Retry duration: 195 s.
+- Remaining retry failure: `label-in-name.html`.
+- Groq daily token limit: 200,000.
+- Tokens used at the time of failure: 197,604.
+- Further retries should wait until sufficient provider quota is available.
+
+### Live ingestion
+
+- A11yCoach on Render: PENDING — Milestone 7.
+- Live documents completed: PENDING.
+- Live documents failed: PENDING.
+- A live request without the admin token gets status: PENDING.
+- Local unauthenticated POST request returned HTTP 401.
+
+### Week 2 against Monday's estimate
+
+- docs/CAPACITY.md estimated 1,500 pages and 2,110,295 raw tokens.
+- docs/INGEST_REPORT.md reports 321 documents, 497 pages and approximately 187,775 cleaned text tokens.
+- Actual page coverage: 33.1% of the full target.
+- Estimated tokens per page decreased from 1,407 to 377.8, approximately 73.1% lower.
+- The difference is likely due to HTML cleaning and differences in document composition, as well as the corpus not yet reaching its full target.
+- At the current average text density, 1,500 pages would contain approximately 566,726 tokens.
+- Token counts use the approximate four-characters-per-token method.
+
+### One thing that went wrong today, and how I fixed it
+
+The worker initially failed to connect to Neon because of a hostname resolution error. I checked the database hostname using nslookup, verified the API readiness endpoint and restarted the worker successfully.
+
+I also encountered LLM provider rate limits. The worker handled these using automatic retries and recorded exhausted attempts in the dead-letter list. The daily quota limitation remains unresolved.
+
+### Testing and validation
+
+- Unit tests: 108 passed.
+- Integration tests: 14 passed.
+- Total tests passed across both runs: 122.
+- Worker recovery test: 20 of 20 completed.
+- Docker Compose defines five services: db, redis, migrate, api and worker.
+- Ingestion report generated successfully.
+- No queued or running ingestion items remain.
